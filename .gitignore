@@ -1,0 +1,5 @@
+
+*.resolved
+.swiftpm/xcode/xcuserdata/giles.xcuserdatad/xcschemes/xcschememanagement.plist
+*.xcuserstate
+*.xcworkspacedata
