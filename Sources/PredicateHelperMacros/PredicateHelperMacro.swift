@@ -31,6 +31,7 @@ public struct PredicateHelperMacro: PeerMacro {
     ) throws -> [SwiftSyntax.DeclSyntax] {
         guard let functionDeclaration = declaration.as(FunctionDeclSyntax.self),
               let functionBody = functionDeclaration.body,
+              let predicateType = functionDeclaration.signature.returnClause?.type.trimmedDescription,
               !functionBody.statements.isEmpty else {
             throw PredicateHelperMacroError.noAttachedFunction }
         
@@ -38,6 +39,7 @@ public struct PredicateHelperMacro: PeerMacro {
         let arguments = functionDeclaration.signature.parameterClause.parameters
         let statements = functionBody.statements.map({ $0.trimmedDescription })
         let predicateStatement = statements.last!
+        let type = predicateType.trimmingPrefix(while: { $0 != "<" }).dropFirst().dropLast()
         
         guard predicateStatement.hasPrefix(returnStringStart) else {
             throw PredicateHelperMacroError.noPredicate(predicateStatement) }
@@ -49,7 +51,7 @@ public struct PredicateHelperMacro: PeerMacro {
             {
                 \(statements.dropLast().joined(separator: "\n"))
             
-                let decider: (Self) -> Bool =  \(predicateClosure) 
+                let decider: (\(type)) -> Bool =  \(predicateClosure) 
             
                 return decider(self)
             }
