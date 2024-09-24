@@ -47,10 +47,8 @@ public struct PredicateHelperMacro: PeerMacro {
         let predicateClosure = predicateStatement.trimmingPrefix(while: { $0 != "{" })
 
         return [DeclSyntax.init(stringLiteral: """
-            func \(functionName)(\(arguments)) -> Bool 
-            {
+            func \(functionName)(\(arguments)) -> Bool {
                 \(statements.dropLast().joined(separator: "\n"))
-            
                 let decider: (\(type)) -> Bool =  \(predicateClosure) 
             
                 return decider(self)
