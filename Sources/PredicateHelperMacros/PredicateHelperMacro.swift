@@ -3,63 +3,62 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
-/// Implementation of the `PredicateHelper` macro. This takes a static @Model class function
-/// returning #Predicate macro content and generates a matching member function performing the same
-/// logic.
+// Move to Sweeper's much simplified approach: https://stackoverflow.com/a/79008612/978300
 
-private let returnStringStart = "return #Predicate<"
+@main
+struct PredicateHelperPlugin: CompilerPlugin {
+    let providingMacros: [Macro.Type] = [PredicateHelperMacro.self]
+}
 
-private enum PredicateHelperMacroError: Error, CustomStringConvertible {
-    case noAttachedFunction
-    case noPredicate(_ returnString: String)
+enum PredicateHelperMacro: PeerMacro {
+    static func expansion(
+        of node: AttributeSyntax,
+        providingPeersOf declaration: some DeclSyntaxProtocol,
+        in context: some MacroExpansionContext
+    ) throws -> [DeclSyntax] {
+        guard var method = declaration.as(FunctionDeclSyntax.self),
+              let staticIndex = method.modifiers.firstIndex(where: { $0.name.text == "static" })
+        else {
+            throw "Must be applied on static method"
+        }
+        method.modifiers.remove(at: staticIndex)
+        method.removeMacro("PredicateHelper")
+        method.signature.returnClause?.type = "Bool"
+        let argumentList = LabeledExprListSyntax {
+            for parameter in method.signature.parameterClause.parameters {
+                if parameter.firstName.text != "_" {
+                    LabeledExprSyntax(
+                        label: parameter.firstName.text,
+                        expression: DeclReferenceExprSyntax(baseName: parameter.secondName ?? parameter.firstName)
+                    )
+                } else {
+                    LabeledExprSyntax(expression: DeclReferenceExprSyntax(baseName: parameter.secondName!))
+                }
+            }
+        }
+        let body = CodeBlockItemListSyntax {
+            "let predicate = Self.\(raw: method.name)(\(argumentList))"
+            "return try! predicate.evaluate(self)"
+        }
+        method.body?.statements = body
+        return [DeclSyntax(method)]
+    }
+}
 
-    var description: String {
-        switch self {
-        case .noAttachedFunction:
-            return "#PredicateHelper acts on a valid attached static function"
-        case .noPredicate(let returnString):
-            return "#PredicateHelper expects a final string beginning '\(returnStringStart)': \(returnString)"
+extension FunctionDeclSyntax {
+    mutating func removeMacro(_ name: String) {
+        attributes = attributes.filter { attribute in
+            if case let .attribute(attributeSyntax) = attribute,
+               let type = attributeSyntax.attributeName.as(IdentifierTypeSyntax.self),
+               type.name.text == name {
+                return false
+            } else {
+                return true
+            }
         }
     }
 }
 
-public struct PredicateHelperMacro: PeerMacro {
-    public static func expansion(
-        of node: SwiftSyntax.AttributeSyntax,
-        providingPeersOf declaration: some SwiftSyntax.DeclSyntaxProtocol,
-        in context: some SwiftSyntaxMacros.MacroExpansionContext
-    ) throws -> [SwiftSyntax.DeclSyntax] {
-        guard let functionDeclaration = declaration.as(FunctionDeclSyntax.self),
-              let functionBody = functionDeclaration.body,
-              let predicateType = functionDeclaration.signature.returnClause?.type.trimmedDescription,
-              !functionBody.statements.isEmpty else {
-            throw PredicateHelperMacroError.noAttachedFunction }
-        
-        let functionName = functionDeclaration.name.text
-        let arguments = functionDeclaration.signature.parameterClause.parameters
-        let statements = functionBody.statements.map({ $0.trimmedDescription })
-        let predicateStatement = statements.last!
-        let type = predicateType.trimmingPrefix(while: { $0 != "<" }).dropFirst().dropLast()
-        
-        guard predicateStatement.hasPrefix(returnStringStart) else {
-            throw PredicateHelperMacroError.noPredicate(predicateStatement) }
-        
-        let predicateClosure = predicateStatement.trimmingPrefix(while: { $0 != "{" })
+// Here I conformed String to Error to easily emit diagnostics
+extension String: @retroactive Error {}
 
-        return [DeclSyntax.init(stringLiteral: """
-            func \(functionName)(\(arguments)) -> Bool {
-                \(statements.dropLast().joined(separator: "\n"))
-                let decider: (\(type)) -> Bool =  \(predicateClosure) 
-            
-                return decider(self)
-            }
-            """)]
-    }
-}
-
-@main
-struct PredicateHelperPlugin: CompilerPlugin {
-    let providingMacros: [Macro.Type] = [
-        PredicateHelperMacro.self,
-    ]
-}

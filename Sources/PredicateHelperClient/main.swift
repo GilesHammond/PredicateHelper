@@ -11,9 +11,7 @@ struct Item
     -> Predicate<Item> {
         let distantPast = Date.distantPast
         let distantFuture = Date.distantFuture
-        
-        // Comments are not transferred to the output
-        
+
         return #Predicate<Item> { item in
             ((item.startDate ?? item.endDate ?? distantFuture) < range.upperBound)
             &&
